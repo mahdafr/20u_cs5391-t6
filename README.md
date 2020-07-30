@@ -31,3 +31,15 @@ __Deliverables__:
   - todo
   
 </details>
+
+<details>
+  <summary>References/Reources</summary>
+
+  - The [POX Wiki](https://noxrepo.github.io/pox-doc/html/) on:
+    - [learning switches](https://github.com/mininet/openflow-tutorial/wiki/Create-a-Learning-Switch#Controller_Choice_POX_Python)
+    - the `l2learning.py` [source code](https://github.com/noxrepo/pox/blob/carp/pox/forwarding/l2_learning.py)
+  - Sources for understanding Learning Switches
+    - This [YouTube Video](https://www.youtube.com/watch?v=5awRpqxABMY)
+    - This [Coursera course](https://www.coursera.org/learn/sdn)
+  
+</details>
