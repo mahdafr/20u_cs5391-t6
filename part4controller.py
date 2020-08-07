@@ -124,6 +124,9 @@ class Part4Controller (object):
 
     packet_in = event.ofp # The actual ofp_packet_in message.
     
+    if event.connection.dpid!=21:                       # cores21 is the L3
+      return
+  
     if self._is_arp(packet):                            # handle ARP traffic?
       self._handle_ARP(packet, event)
     else:                                               # learn and forward?
@@ -135,15 +138,13 @@ class Part4Controller (object):
   def _update(self, inport, packet, arp=False):
     if arp:
       src = packet.next.protosrc
-      dst = packet.next.protodst
     else:
       src = packet.next.srcip
-      dst = packet.next.dstip
-    if src in self._table and self._table[src] != (src, packet.src, inport):
-      print("RE-learned %s" % src)                     # update info
-    else:
-      print("Learned %s" % str(src))                  # new dst to learn
-    self._table[src] = (src, packet.src, inport)
+    if src in self._table and self._table[src] != (packet.src, inport):
+      log.debug("Re-learned %s" % src)                  # update info
+    elif src not in self._table:
+      log.debug("Learned %s" % str(src))                # new dst to learn
+    self._table[src] = (packet.src, inport)
     log.debug(self._table)
 
   def _is_arp(self, p):
@@ -153,10 +154,13 @@ class Part4Controller (object):
     a = p.next
     msg = 'request' if a.opcode==1 else 'reply'
     log.debug("Got ARP %s from %s to %s", msg, str(a.protosrc), str(a.protodst))
-    self._update(event.port, p, arp=True)
-    self._reply(p, event)
+    if a.protosrc in self._table:
+      self._reply(p, event)
+    else:
+      self._update(event.port, p, arp=True)
+      self._reply(p, event, flood=True)
 
-  def _reply(self, p, event):
+  def _reply(self, p, event, flood=False):
     me = event.connection.dpid
     a = p.next
     r = pkt.arp()
@@ -168,16 +172,16 @@ class Part4Controller (object):
     r.hwdst = a.hwsrc
     r.protodst = a.protosrc
     r.protosrc = a.protodst
-    print(a.hwdst)
-    r.hwsrc = self._table[a.protodst][1]                  # mac
+    r.hwsrc = self._table[a.protosrc][1]                  # mac
     e = pkt.ethernet(type=p.type, src=self.dpid_to_mac(me), dst=a.hwsrc)
     e.set_payload(r)
-    log.debug("Replied to ARP request for %s" % str(r.protosrc))
     msg = of.ofp_packet_out()
     msg.data = e.pack()
+    prt = of.OFPP_FLOOD if flood else self._table[a.protosrc][2]
     msg.actions.append(of.ofp_action_output(port=of.OFPP_IN_PORT))
     msg.in_port = event.port
     event.connection.send(msg)
+    log.debug("Replied to ARP request for " +str(r.protosrc))
 
   def dpid_to_mac(self,dpid):
     return EthAddr("%012x" % (dpid & 0xffFFffFFffFF,))
