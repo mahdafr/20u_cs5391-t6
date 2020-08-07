@@ -28,7 +28,14 @@ __Deliverables__:
 <details>
   <summary>The Learning Switch</summary>
 
-  - todo
+  - There are two major divisions in the program behavior:
+    1. if we get an ARP packet:
+      - we do not forward this traffic
+      - instead, we only learn the network flow (src -> dst, focusing on the ports)
+    2. if we get an IPv4 packet:
+      - we want to forward this traffic to the right place (the correct out_port and the same destination)
+      - but we send to an IP address instead of the MAC address (like used in part3 from [Task 5](https://github.com/mahdafr/20u_cs5391-t5/pox/part3controller.py))
+      - this means that we add rules to the flow table each time we get new destinations to 'learn' which ports we can use to reach which destinations
   
 </details>
 
@@ -38,8 +45,12 @@ __Deliverables__:
   - The [POX Wiki](https://noxrepo.github.io/pox-doc/html/) on:
     - [learning switches](https://github.com/mininet/openflow-tutorial/wiki/Create-a-Learning-Switch#Controller_Choice_POX_Python)
     - the `l2learning.py` [source code](https://github.com/noxrepo/pox/blob/carp/pox/forwarding/l2_learning.py)
+    - the `l3learning.py` [source code](https://github.com/noxrepo/pox/blob/carp/pox/forwarding/l3_learning.py)
+    - the `packet` [documentation](https://noxrepo.github.io/pox-doc/html/#working-with-packets-pox-lib-packet)
   - Sources for understanding Learning Switches
     - This [YouTube Video](https://www.youtube.com/watch?v=5awRpqxABMY)
     - This [Coursera course](https://www.coursera.org/learn/sdn)
+    - This [3rd-party tutorial](https://haryachyy.wordpress.com/2014/06/03/learning-pox-openflow-controller-imitating-l3/)
+    
   
 </details>
