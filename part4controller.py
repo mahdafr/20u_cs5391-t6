@@ -56,10 +56,10 @@ class Part4Controller (object):
   def s3_setup(self):
     self._allow_all()
 
+  # we only keep the blocking rules; all other traffic uses switch learning
   def cores21_setup(self):
-    # do not use any following rules -- instead, we use switch learning
     self._block()                               # still block comm.s w/hnotrust
-    self.ip_table = dict()                      # map: IPs
+    self._table = {}                            # map: IPs to this dpid
 
   def dcs31_setup(self):
     self._allow_all()
@@ -106,9 +106,10 @@ class Part4Controller (object):
   def resend_packet(self, packet_in, out_port):
     msg = of.ofp_packet_out()
     msg.data = packet_in
-    action = of.ofp_action_output(port = out_port)
+    action = of.ofp_action_output(port=out_port)
     msg.actions.append(action)
     self.connection.send(msg)
+    log.debug("sent packet to %i", out_port)
 
   def _handle_PacketIn (self, event):
     """
@@ -123,24 +124,91 @@ class Part4Controller (object):
 
     packet_in = event.ofp # The actual ofp_packet_in message.
     
-    if self._is_arp(packet):
-      self._learn_IP(packet)
-    else:
-      self._forward_to_switch(packet)
+    if self._is_arp(packet):                            # handle ARP traffic?
+      self._handle_ARP(packet, event)
+    else:                                               # learn and forward?
+      self._forward_to_switch(packet, event)
     
     print('Unhandled packet from '+str(self.connection.dpid)+':'+packet.dump())
 
+  # learns port/MAC info, if new, otherwise, updates known
+  def _update(self, inport, packet, arp=False):
+    if arp:
+      src = packet.next.protosrc
+      dst = packet.next.protodst
+    else:
+      src = packet.next.srcip
+      dst = packet.next.dstip
+    if src in self._table and self._table[src] != (src, packet.src, inport):
+      print("RE-learned %s" % src)                     # update info
+    else:
+      print("Learned %s" % str(src))                  # new dst to learn
+    self._table[src] = (src, packet.src, inport)
+    log.debug(self._table)
+
   def _is_arp(self, p):
-    return isinstance(p.next, pkt.ipv4.arp)
+    return p.type == p.ARP_TYPE
 
-  def _is_ip(self, p):
-    return isinstance(p.next, pkt.ipv4.ipv4)
+  def _handle_ARP(self, p, event):
+    a = p.next
+    msg = 'request' if a.opcode==1 else 'reply'
+    log.debug("Got ARP %s from %s to %s", msg, str(a.protosrc), str(a.protodst))
+    self._update(event.port, p, arp=True)
+    self._reply(p, event)
 
-  def _learn_IP(self, p):
-    pass
+  def _reply(self, p, event):
+    me = event.connection.dpid
+    a = p.next
+    r = pkt.arp()
+    r.hwtype = a.hwtype
+    r.prototype = a.prototype
+    r.hwlen = a.hwlen
+    r.protolen = a.protolen
+    r.opcode = pkt.arp.REPLY
+    r.hwdst = a.hwsrc
+    r.protodst = a.protosrc
+    r.protosrc = a.protodst
+    print(a.hwdst)
+    r.hwsrc = self._table[a.protodst][1]                  # mac
+    e = pkt.ethernet(type=p.type, src=self.dpid_to_mac(me), dst=a.hwsrc)
+    e.set_payload(r)
+    log.debug("Replied to ARP request for %s" % str(r.protosrc))
+    msg = of.ofp_packet_out()
+    msg.data = e.pack()
+    msg.actions.append(of.ofp_action_output(port=of.OFPP_IN_PORT))
+    msg.in_port = event.port
+    event.connection.send(msg)
 
-  def _forward_to_switch(self, p):
-    pass
+  def dpid_to_mac(self,dpid):
+    return EthAddr("%012x" % (dpid & 0xffFFffFFffFF,))
+
+  # forward this packet to its destaination, and add to the flow table
+  def _forward_to_switch(self, p, event):
+    self._update(event.port, p)                           # new knowledge?
+    conn = event.connection
+    me = conn.dpid
+    
+    if p.next.dstip in self._table:                       # forward to dst?
+      dest = p.next.dstip
+      dst = (self._table[dest][2], self._table[dest][1])  # port, mac
+    
+      if dst[0] == event.port:                            # through in-port?
+        #log.warning('Not sending packet to %s back out of the ' +
+                    #'in-port %i' % (str(dst[0]), str(event.port)))
+        log.warning("Not sending packet back out of in-port")
+      else:
+        do = [of.ofp_action_output(port=dst[0]),          # the port to dest
+              of.ofp_action_dl_addr.set_dst(dst[1])]      # MAC addr of dest
+        want = of.ofp_match.from_packet(p, event.port)
+        conn.send(of.ofp_flow_mod(command=of.OFPFC_ADD,   # learn new rule
+                                  idle_timeout=10,        # from l3learning.py
+                                  hard_timeout=of.OFP_FLOW_PERMANENT,
+                                  buffer_id=event.ofp.buffer_id,
+                                  actions=do,
+                                  match=want))
+      
+      print('{a} forwarded packet from {b}>'.format(a=me, b=p.next.srcip) +
+            '{a}, using port {b}'.format(a=p.next.dstip,b=dst[0]))
 
 def launch ():
   """
