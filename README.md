@@ -1,3 +1,5 @@
+### This project is a 2-part program. See [Part 1](https://github.com/mahdafr/20u_cs5391-t5) and [Part 2, this project](https://github.com/mahdafr/20u_cs5391-t6) for complete information.
+
 # Assignment #6
 In this task, you will be extending your part-3 code to _implement an actual level-3 router_ out of the ___cores21___ switch.
 Copy the ___`part3controller.py`___ file to ___`part4controller.py`___, there is no new skeleton.
